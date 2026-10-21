@@ -59,5 +59,5 @@ El `./` hace falta porque la carpeta actual no está en el PATH.
 - Antes de cada commit, mirar `git status` para saber qué se está subiendo
 
 
-
+- En carpetas, la `x` significa "poder entrar", no ejecutar. Por eso carpetas en 755 y archivos en 644
 
