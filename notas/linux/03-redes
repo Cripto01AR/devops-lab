@@ -94,28 +94,35 @@ Por qué se usa:
 Ejemplo real: Codespaces expone mi puerto 8000 con una URL `https`. GitHub pone el TLS y me reenvía HTTP plano.
 
 ## Qué pasa cuando escribo una URL
-(Escribilo vos: los 5 pasos DNS → TCP → TLS → pedido HTTP → respuesta HTTP,
-con tus palabras y sin mirar la respuesta modelo)
-DNS: Domain Name System (Sistema de nombres de dominio)
-El navegador no se maneja con nombres, necesita la ip.  Aqui entra en juego el DNS, traduce una direccion url a una direccion ip (numerica)
-Primero lo consulta con la memoria cache. Si no la tiene, se consulta al puerto 53(puerto estandar de comunicacion dedicado al DNS). Este resolver o 
-consulta devuelven registros con direcciones IPs. Esta respuesta queda guardada en la cache el tiempo determinado por el TTL
-Conexion: existen muchos protocolos -> TCP, UDP (los mas conocidos). El mas utilizado para este tipo de conexiones es el TCP. El navegador abre esta conexion(TCP)
-a una de esas ips que se registraron, a los respectivos puertos, ya sea 443 (https) o 80 (http)
-TLS: Una vez hecho el handshake (saludo de comunicacion entre cliente-servidor). El servidor presenta su certificado, el cliente verifica 3 cuestiones: identificacion correcta
-del dominio, estado de validez del certificado(que no este vencido) y que este avalado (firmado por una CA, Certificaction Authority). Si algo no cierra, salta un error. Si sale todo bien,
-acuerdan claves entre si y viaja todo cifrado.
-Pedido HTTP: el navegador manda GET (recibir) con headers, un ejemplo es HOST: "nombre.com" por ej.
-Respuesta HTTP: devuelve un codigo de estado en la conexion (2xx -> OK , 3xx -> si hay redireccion, 4xx -> si no existe, 5xx -> problema del servidor), headers y el HTML.
-EXTRA: con http, el paso de TLS, no existe ya que no hay cifrado, todo viaja sin cifrar.
+**1. DNS (Domain Name System):** el navegador no se maneja con nombres, necesita la IP. El DNS traduce el nombre del dominio a una dirección IP (numérica). Primero se consulta la memoria caché. Si no está ahí, se le pregunta a un **resolver** por el puerto 53 (puerto estándar del DNS). El resolver devuelve registros con direcciones IP, y esa respuesta queda guardada en caché el tiempo que indique el TTL.
+
+**2. Conexión:** existen varios protocolos de transporte; los más conocidos son TCP y UDP. Para la web se usa TCP. El navegador abre una conexión TCP a una de las IP que devolvió el DNS, al puerto 443 (HTTPS) o 80 (HTTP).
+
+**3. TLS:** durante el handshake (el saludo inicial entre cliente y servidor), el servidor presenta su certificado y el cliente verifica tres cosas: que corresponda al dominio, que no esté vencido y que esté firmado por una CA (Certificate Authority) de confianza. Si algo no cierra, salta un error y se corta la conexión. Si sale todo bien, acuerdan claves entre sí y desde ahí todo viaja cifrado.
+
+**4. Pedido HTTP:** el navegador manda un `GET` (pide un recurso) con headers, por ejemplo `Host: nombre.com`.
+
+**5. Respuesta HTTP:** el servidor devuelve un código de estado (2xx → OK, 3xx → redirección, 4xx → error del cliente, 5xx → error del servidor), headers y el HTML.
+
+**Extra:** con HTTP, el paso de TLS no existe: no hay cifrado y todo viaja en texto plano. Por eso los sitios bien configurados redirigen con un `301` a HTTPS.
 
 ## Flujo de un servidor web y firewall
-(Escribilo vos: el recorrido usuario → Nginx → app → Postgres, qué puertos
-quedan abiertos en el firewall y por qué, y las dos capas de defensa)
-Cuando tenemos un servidor web, vimos que se manejan servidores que permiten que no nos expongamos directamente al internet. El concepto de reverse proxy, consisten en un servidor que se pone
-por delante a nuestras aplicaciones (Nginx) filtrando todo el trafico por los puertos https y http (443 y 80) y lo reenvia a un puerto local nuestro donde corren nuestras aplicaciones, ya sea Postgres
-u otro proceso que tengamos en algun puerto, puede ser el 8000, 8001, el que este disponible (existe un estandar de uso para ciertas aplicaciones, 5432 para postgrest, 3000 para aplicaciones web, etc)
-Es indispensable dejar abiertos los puertos que necesita el reverse proxy y los que queremos exponer hacia afuera, no tiene sentido abrir puertos si no le vamos a dar el uso (es un hueco de ciberseguridad
-y es una vulnerabilidad). De esta forma no solo garantizamos seguridad, si no que delegamos el TLS en el servidor utilizado(Nginx) y nuestras aplicaciones son ajenos a eso.
-El usuario no habla con nuestra base de datos, habla con el reverse proxy, y el reverse proxy se comunica con nuestra base, esa es la comunicacion. De esta manera, el puerto 3000 y 5432 escuchan localmente en 
-127.0.0.0 (maquina local) y se mantienen cerrado en el firewall.
+En un servidor web, las aplicaciones no se exponen directamente a internet. Delante de ellas se pone un **reverse proxy** (por ejemplo, Nginx), que recibe todo el tráfico web por los puertos 80 y 443 y lo reenvía al puerto local donde corre la aplicación (por convención, 3000 u 8000 para apps web).
+
+El recorrido es:
+`usuario → 443 Nginx → 3000 app → 5432 Postgres`
+
+El usuario nunca habla con la base de datos: habla con Nginx, Nginx habla con la app y **la app** es la que se comunica con la base. Nginx nunca toca Postgres.
+
+**Puertos abiertos en el firewall:**
+- **22 (SSH):** para administrar el servidor (protegido con claves, sin contraseñas)
+- **80 (HTTP):** para redirigir a HTTPS y para que Let's Encrypt valide el dominio
+- **443 (HTTPS):** el tráfico web real
+
+Todo lo demás queda cerrado. No tiene sentido abrir puertos que no se usan: cada puerto abierto es una posible vulnerabilidad.
+
+**Dos capas de defensa:**
+1. **Dónde escucha el servicio:** la app (3000) y Postgres (5432) escuchan en `127.0.0.1`, así que solo aceptan conexiones de la propia máquina.
+2. **Qué deja pasar el firewall:** aunque un servicio quede escuchando en `0.0.0.0` por error, el firewall bloquea ese puerto desde afuera.
+
+Además, el TLS queda delegado en Nginx (**terminación TLS**): las aplicaciones no tienen que manejar certificados.
